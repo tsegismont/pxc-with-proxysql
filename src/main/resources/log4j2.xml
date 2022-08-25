@@ -18,7 +18,13 @@
     <Logger name="node3" level="WARN" additivity="false">
       <AppenderRef ref="Console"/>
     </Logger>
-    <Root level="INFO">
+    <Logger name="proxysql" level="WARN" additivity="false">
+      <AppenderRef ref="Console"/>
+    </Logger>
+    <Logger name="app.Application" level="INFO" additivity="false">
+      <AppenderRef ref="Console"/>
+    </Logger>
+    <Root level="WARN">
       <AppenderRef ref="Console"/>
     </Root>
   </Loggers>
