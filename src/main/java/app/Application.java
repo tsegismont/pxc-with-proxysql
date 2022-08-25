@@ -1,7 +1,8 @@
 package app;
 
-import org.apache.logging.log4j.LogManager;
-import org.apache.logging.log4j.Logger;
+import io.quarkus.runtime.QuarkusApplication;
+import io.quarkus.runtime.annotations.QuarkusMain;
+import org.jboss.logging.Logger;
 import org.slf4j.LoggerFactory;
 import org.testcontainers.containers.Container;
 import org.testcontainers.containers.GenericContainer;
@@ -11,6 +12,7 @@ import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.images.builder.Transferable;
 import org.testcontainers.shaded.org.apache.commons.lang3.time.StopWatch;
 
+import javax.inject.Inject;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -22,9 +24,8 @@ import static java.util.concurrent.TimeUnit.SECONDS;
 import static org.testcontainers.shaded.com.google.common.util.concurrent.Uninterruptibles.awaitUninterruptibly;
 import static org.testcontainers.shaded.com.google.common.util.concurrent.Uninterruptibles.sleepUninterruptibly;
 
-public class Application {
-
-  private static final Logger LOG = LogManager.getLogger(Application.class);
+@QuarkusMain
+public class Application implements QuarkusApplication {
 
   private static final String CLUSTER_NAME = "percona-cluster";
 
@@ -36,7 +37,11 @@ public class Application {
   private static final String CLIENT_USER = "dbuser";
   private static final String CLIENT_USER_PASSWORD = "dbuser1234#";
 
-  public void start() throws Exception {
+  @Inject
+  Logger log;
+
+  @Override
+  public int run(String... args) throws Exception {
     Path cert = createCerts();
 
     Network network = setupNetwork();
@@ -52,13 +57,15 @@ public class Application {
     configureProxySql(proxySqlContainer);
 
     Integer mappedPort = proxySqlContainer.getMappedPort(6033);
-    LOG.info("\uD83D\uDE80 Ready to receive connections with Vert.x >>> mysql://{}:{}@127.0.0.1:{}", CLIENT_USER, CLIENT_USER_PASSWORD, mappedPort);
+    log.infof("\uD83D\uDE80 Ready to receive connections with Vert.x >>> mysql://%s:%s@127.0.0.1:%s", CLIENT_USER, CLIENT_USER_PASSWORD, mappedPort);
 
     awaitUninterruptibly(new CountDownLatch(1));
+
+    return 0;
   }
 
   private Path createCerts() throws Exception {
-    LOG.info("\u231B Creating Percona server certificates...");
+    log.info("\u231B Creating Percona server certificates...");
     StopWatch watch = StopWatch.createStarted();
     Path cert = Files.createTempDirectory("cert");
     cert.toFile().deleteOnExit();
@@ -69,7 +76,7 @@ public class Application {
       .withCommand("mysql_ssl_rsa_setup", "-d", "/cert")
       .waitingFor(Wait.forLogMessage(".*-----.*\\n", 3));
     container.start();
-    LOG.info("\uD83D\uDE80 Percona server certificates created in {}", watch.formatTime());
+    log.infof("\uD83D\uDE80 Percona server certificates created in %s", watch.formatTime());
     return cert;
   }
 
@@ -78,7 +85,7 @@ public class Application {
   }
 
   private GenericContainer<?> startPerconaNode(Network network, Path cert, String name, boolean join) {
-    LOG.info("\u231B Starting Percona " + name + "...");
+    log.info("\u231B Starting Percona " + name + "...");
     StopWatch watch = StopWatch.createStarted();
     GenericContainer<?> container = new GenericContainer<>("percona/percona-xtradb-cluster:8.0")
       .withEnv("MYSQL_ROOT_PASSWORD", MYSQL_ROOT_PASSWORD)
@@ -113,12 +120,12 @@ public class Application {
         .waitingFor(Wait.forLogMessage(logMsg, 2));
     }
     container.start();
-    LOG.info("\uD83D\uDE80 Percona " + name + " started in {}", watch.formatTime());
+    log.infof("\uD83D\uDE80 Percona " + name + " started in %s", watch.formatTime());
     return container;
   }
 
-  private static void createBackendUsers(GenericContainer<?> container) throws Exception {
-    LOG.info("\u231B Creating backend users...");
+  private void createBackendUsers(GenericContainer<?> container) throws Exception {
+    log.info("\u231B Creating backend users...");
     StopWatch watch = StopWatch.createStarted();
     execStatement(container, "root", MYSQL_ROOT_PASSWORD, 3306, format(
       "CREATE USER '%s'@'%%' IDENTIFIED BY '%s'"
@@ -132,11 +139,11 @@ public class Application {
     execStatement(container, "root", MYSQL_ROOT_PASSWORD, 3306, format(
       "GRANT ALL ON *.* TO '%s'@'%%'"
       , CLIENT_USER));
-    LOG.info("\uD83D\uDE80 Backend users created in {}", watch.formatTime());
+    log.infof("\uD83D\uDE80 Backend users created in %s", watch.formatTime());
   }
 
-  private static void execStatement(GenericContainer<?> container, String user, String password, int port, String statement) throws Exception {
-    LOG.debug("Executing statement: " + statement);
+  private void execStatement(GenericContainer<?> container, String user, String password, int port, String statement) throws Exception {
+    log.debugf("Executing statement: %s", statement);
     Container.ExecResult result = container.execInContainer("mysql", "-u", user, "-p" + password, "-h", "127.0.0.1", "-P", String.valueOf(port), "-e", statement);
     if (result.getExitCode() != 0) {
       throw new RuntimeException("Failed to execute statement: " + statement + "\n" + result.getStderr());
@@ -144,7 +151,7 @@ public class Application {
   }
 
   private GenericContainer<?> startProxySqlContainer(Network network) {
-    LOG.info("\u231B Starting ProxySQL...");
+    log.info("\u231B Starting ProxySQL...");
     StopWatch watch = StopWatch.createStarted();
     GenericContainer<?> container = new GenericContainer<>("proxysql/proxysql")
       .withNetwork(network)
@@ -153,12 +160,12 @@ public class Application {
       .waitingFor(Wait.forLogMessage(".*Latest ProxySQL version available.*\\n", 1));
     container.start();
     sleepUninterruptibly(5, SECONDS);
-    LOG.info("\uD83D\uDE80 ProxySQL started in {}", watch.formatTime());
+    log.infof("\uD83D\uDE80 ProxySQL started in %s", watch.formatTime());
     return container;
   }
 
-  private static void configureProxySql(GenericContainer<?> proxy) throws Exception {
-    LOG.info("\u231B Configuring ProxySQL...");
+  private void configureProxySql(GenericContainer<?> proxy) throws Exception {
+    log.info("\u231B Configuring ProxySQL...");
     StopWatch watch = StopWatch.createStarted();
     for (String node : List.of("node1", "node2", "node3")) {
       execStatement(proxy, "admin", "admin", 6032, format(
@@ -183,14 +190,6 @@ public class Application {
     execStatement(proxy, "admin", "admin", 6032,
       "LOAD MYSQL USERS TO RUNTIME"
     );
-    LOG.info("\uD83D\uDE80 ProxySQL configured in {}", watch.formatTime());
-  }
-
-  public static void main(String[] args) {
-    try {
-      new Application().start();
-    } catch (Exception e) {
-      throw new RuntimeException(e);
-    }
+    log.infof("\uD83D\uDE80 ProxySQL configured in %s", watch.formatTime());
   }
 }
