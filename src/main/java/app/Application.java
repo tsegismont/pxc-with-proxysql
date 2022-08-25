@@ -30,7 +30,6 @@ public class Application {
 
   private static final String MYSQL_ROOT_PASSWORD = "root1234#";
 
-
   private static final String MONITORING_USER = "proxysql";
   private static final String MONITORING_USER_PASSWORD = "proxysql1234#";
 
@@ -42,9 +41,9 @@ public class Application {
 
     Network network = setupNetwork();
 
-    startPerconaNode(network, cert, "node1", null);
-    startPerconaNode(network, cert, "node2", "node1");
-    GenericContainer<?> perconaNode3 = startPerconaNode(network, cert, "node3", "node1");
+    startPerconaNode(network, cert, "node1", false);
+    startPerconaNode(network, cert, "node2", true);
+    GenericContainer<?> perconaNode3 = startPerconaNode(network, cert, "node3", true);
 
     createBackendUsers(perconaNode3);
 
@@ -78,7 +77,7 @@ public class Application {
     return Network.builder().driver("bridge").build();
   }
 
-  private GenericContainer<?> startPerconaNode(Network network, Path cert, String name, String join) {
+  private GenericContainer<?> startPerconaNode(Network network, Path cert, String name, boolean join) {
     LOG.info("\u231B Starting Percona " + name + "...");
     StopWatch watch = StopWatch.createStarted();
     GenericContainer<?> container = new GenericContainer<>("percona/percona-xtradb-cluster:8.0")
@@ -106,10 +105,9 @@ public class Application {
         ssl-key = /cert/server-key.pem
         """.stripIndent()), "/etc/percona-xtradb-cluster.conf.d/custom.cnf");
     String logMsg = ".*Synchronized with group, ready for connections.*\\n";
-    if (join != null) {
+    if (join) {
       container
-        .withEnv("CLUSTER_JOIN", join)
-        .waitingFor(Wait.forLogMessage(logMsg, 1));
+        .withEnv("CLUSTER_JOIN", "node1").waitingFor(Wait.forLogMessage(logMsg, 1));
     } else {
       container
         .waitingFor(Wait.forLogMessage(logMsg, 2));
