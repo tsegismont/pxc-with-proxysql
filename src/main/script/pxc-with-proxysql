@@ -1,0 +1,6 @@
+#!/bin/bash
+
+SCRIPT=$(readlink -f "$0")
+SCRIPT_PATH=$(dirname "$SCRIPT")
+
+exec java -jar "$SCRIPT_PATH/pxc-with-proxysql-runner.jar"
