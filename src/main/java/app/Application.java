@@ -57,7 +57,7 @@ public class Application implements QuarkusApplication {
     configureProxySql(proxySqlContainer);
 
     Integer mappedPort = proxySqlContainer.getMappedPort(6033);
-    log.infof("\uD83D\uDE80 Ready to receive connections with Vert.x >>> mysql://%s:%s@127.0.0.1:%s", CLIENT_USER, CLIENT_USER_PASSWORD, mappedPort);
+    log.infof("\uD83D\uDE80 Ready to receive connections on port %s", CLIENT_USER, CLIENT_USER_PASSWORD, mappedPort);
 
     awaitUninterruptibly(new CountDownLatch(1));
 
