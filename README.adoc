@@ -1,0 +1,51 @@
+= Percona XtraDB cluster with ProxySQL
+
+A tool for testing XtraDB cluster with ProxySQL in front.
+
+It creates a cluster of 3 XtraDB nodes, configures ProxySQL and gives you a port.
+
+== Sample output
+
+----
+15:05:49.888 INFO  [app.Application] (Quarkus Main Thread) ⏳ Creating Percona server certificates...
+15:05:51.865 INFO  [app.Application] (Quarkus Main Thread) ⚡ Percona server certificates created in 00:00:01.960
+15:05:51.867 INFO  [app.Application] (Quarkus Main Thread) ⏳ Starting Percona node1...
+15:06:13.160 INFO  [app.Application] (Quarkus Main Thread) ⚡ Percona node1 started in 00:00:21.291
+15:06:13.160 INFO  [app.Application] (Quarkus Main Thread) ⏳ Starting Percona node2...
+15:06:36.522 INFO  [app.Application] (Quarkus Main Thread) ⚡ Percona node2 started in 00:00:23.362
+15:06:36.523 INFO  [app.Application] (Quarkus Main Thread) ⏳ Starting Percona node3...
+15:06:59.795 INFO  [app.Application] (Quarkus Main Thread) ⚡ Percona node3 started in 00:00:23.271
+15:06:59.795 INFO  [app.Application] (Quarkus Main Thread) ⏳ Creating backend users...
+15:07:00.117 INFO  [app.Application] (Quarkus Main Thread) ⚡ Backend users created in 00:00:00.321
+15:07:00.118 INFO  [app.Application] (Quarkus Main Thread) ⏳ Starting ProxySQL...
+15:07:06.818 INFO  [app.Application] (Quarkus Main Thread) ⚡ ProxySQL started in 00:00:06.700
+15:07:06.818 INFO  [app.Application] (Quarkus Main Thread) ⏳ Configuring ProxySQL...
+15:07:07.491 INFO  [app.Application] (Quarkus Main Thread) ⚡ ProxySQL configured in 00:00:00.672
+15:07:07.492 INFO  [app.Application] (Quarkus Main Thread) ⚡ Ready to receive connections on port 49177
+----
+
+== Requirements
+
+- JDK 17+
+
+== Building and running uber-jar
+
+----
+./mvnw
+java -jar target/pxc-with-proxysql-runner.jar
+----
+
+== Building and installing uber-jar and startup-script in `PATH`
+
+By default, the app is installed in `${HOME}/bin`.
+Otherwise, set the `destDir` system property.
+
+----
+./mvnw -DputInPath -DdestDir="${HOME}/bin"
+----
+
+And then from any directory:
+
+----
+pxc-with-proxysql
+----
