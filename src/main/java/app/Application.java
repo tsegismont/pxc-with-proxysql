@@ -42,6 +42,8 @@ public class Application implements QuarkusApplication {
 
   @Override
   public int run(String... args) throws Exception {
+    StopWatch watch = StopWatch.createStarted();
+
     Path cert = createCerts();
 
     Network network = setupNetwork();
@@ -57,7 +59,9 @@ public class Application implements QuarkusApplication {
     configureProxySql(proxySqlContainer);
 
     Integer mappedPort = proxySqlContainer.getMappedPort(6033);
-    log.infof("\u26A1 Ready to receive connections on port %s", mappedPort);
+
+    watch.stop();
+    log.infof("\u26A1 Ready to receive connections on port %s in %s", mappedPort, watch.formatTime());
 
     awaitUninterruptibly(new CountDownLatch(1));
 
@@ -67,16 +71,21 @@ public class Application implements QuarkusApplication {
   private Path createCerts() throws Exception {
     log.info("\u23F3 Creating Percona server certificates...");
     StopWatch watch = StopWatch.createStarted();
+
     Path cert = Files.createTempDirectory("cert");
     cert.toFile().deleteOnExit();
     Files.setPosixFilePermissions(cert, PosixFilePermissions.fromString("rwxrwxrwx"));
+
     GenericContainer<?> container = new GenericContainer<>("percona/percona-xtradb-cluster:8.0")
       .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("mysql_ssl_rsa_setup")))
       .withFileSystemBind(cert.toAbsolutePath().toString(), "/cert")
       .withCommand("mysql_ssl_rsa_setup", "-d", "/cert")
       .waitingFor(Wait.forLogMessage(".*-----.*\\n", 3));
     container.start();
+
+    watch.stop();
     log.infof("\u26A1 Percona server certificates created in %s", watch.formatTime());
+
     return cert;
   }
 
@@ -87,6 +96,7 @@ public class Application implements QuarkusApplication {
   private GenericContainer<?> startPerconaNode(Network network, Path cert, String name, boolean join) {
     log.info("\u23F3 Starting Percona " + name + "...");
     StopWatch watch = StopWatch.createStarted();
+
     GenericContainer<?> container = new GenericContainer<>("percona/percona-xtradb-cluster:8.0")
       .withEnv("MYSQL_ROOT_PASSWORD", MYSQL_ROOT_PASSWORD)
       .withEnv("CLUSTER_NAME", CLUSTER_NAME)
@@ -120,26 +130,86 @@ public class Application implements QuarkusApplication {
         .waitingFor(Wait.forLogMessage(logMsg, 2));
     }
     container.start();
+
+    watch.stop();
     log.infof("\u26A1 Percona " + name + " started in %s", watch.formatTime());
+
     return container;
   }
 
   private void createBackendUsers(GenericContainer<?> container) throws Exception {
     log.info("\u23F3 Creating backend users...");
     StopWatch watch = StopWatch.createStarted();
+
     execStatement(container, "root", MYSQL_ROOT_PASSWORD, 3306, format(
       "CREATE USER '%s'@'%%' IDENTIFIED BY '%s'"
       , MONITORING_USER, MONITORING_USER_PASSWORD));
     execStatement(container, "root", MYSQL_ROOT_PASSWORD, 3306, format(
       "GRANT ALL ON *.* TO '%s'@'%%'"
       , MONITORING_USER));
+
     execStatement(container, "root", MYSQL_ROOT_PASSWORD, 3306, format(
       "CREATE USER '%s'@'%%' IDENTIFIED BY '%s'"
       , CLIENT_USER, CLIENT_USER_PASSWORD));
     execStatement(container, "root", MYSQL_ROOT_PASSWORD, 3306, format(
       "GRANT ALL ON *.* TO '%s'@'%%'"
       , CLIENT_USER));
+
+    watch.stop();
     log.infof("\u26A1 Backend users created in %s", watch.formatTime());
+  }
+
+  private GenericContainer<?> startProxySqlContainer(Network network) {
+    log.info("\u23F3 Starting ProxySQL...");
+    StopWatch watch = StopWatch.createStarted();
+
+    GenericContainer<?> container = new GenericContainer<>("proxysql/proxysql")
+      .withNetwork(network)
+      .withExposedPorts(6032, 6033, 6070)
+      .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("proxysql")))
+      .waitingFor(Wait.forLogMessage(".*Latest ProxySQL version available.*\\n", 1));
+    container.start();
+    sleepUninterruptibly(5, SECONDS);
+
+    watch.stop();
+    log.infof("\u26A1 ProxySQL started in %s", watch.formatTime());
+
+    return container;
+  }
+
+  private void configureProxySql(GenericContainer<?> proxy) throws Exception {
+    log.info("\u23F3 Configuring ProxySQL...");
+    StopWatch watch = StopWatch.createStarted();
+
+    for (String node : List.of("node1", "node2", "node3")) {
+      execStatement(proxy, "admin", "admin", 6032, format(
+        "INSERT INTO mysql_servers(hostgroup_id, hostname, port) VALUES (0,'%s',3306)"
+        , node));
+    }
+
+    execStatement(proxy, "admin", "admin", 6032, format(
+      "UPDATE global_variables SET variable_value='%s' WHERE variable_name='mysql-monitor_username'"
+      , MONITORING_USER));
+    execStatement(proxy, "admin", "admin", 6032, format(
+      "UPDATE global_variables SET variable_value='%s' WHERE variable_name='mysql-monitor_password'"
+      , MONITORING_USER_PASSWORD));
+
+    execStatement(proxy, "admin", "admin", 6032,
+      "LOAD MYSQL VARIABLES TO RUNTIME"
+    );
+    execStatement(proxy, "admin", "admin", 6032,
+      "LOAD MYSQL SERVERS TO RUNTIME"
+    );
+
+    execStatement(proxy, "admin", "admin", 6032, format(
+      "INSERT INTO mysql_users (username,password) VALUES ('%s','%s')"
+      , CLIENT_USER, CLIENT_USER_PASSWORD));
+    execStatement(proxy, "admin", "admin", 6032,
+      "LOAD MYSQL USERS TO RUNTIME"
+    );
+
+    watch.stop();
+    log.infof("\u26A1 ProxySQL configured in %s", watch.formatTime());
   }
 
   private void execStatement(GenericContainer<?> container, String user, String password, int port, String statement) throws Exception {
@@ -148,48 +218,5 @@ public class Application implements QuarkusApplication {
     if (result.getExitCode() != 0) {
       throw new RuntimeException("Failed to execute statement: " + statement + "\n" + result.getStderr());
     }
-  }
-
-  private GenericContainer<?> startProxySqlContainer(Network network) {
-    log.info("\u23F3 Starting ProxySQL...");
-    StopWatch watch = StopWatch.createStarted();
-    GenericContainer<?> container = new GenericContainer<>("proxysql/proxysql")
-      .withNetwork(network)
-      .withExposedPorts(6032, 6033, 6070)
-      .withLogConsumer(new Slf4jLogConsumer(LoggerFactory.getLogger("proxysql")))
-      .waitingFor(Wait.forLogMessage(".*Latest ProxySQL version available.*\\n", 1));
-    container.start();
-    sleepUninterruptibly(5, SECONDS);
-    log.infof("\u26A1 ProxySQL started in %s", watch.formatTime());
-    return container;
-  }
-
-  private void configureProxySql(GenericContainer<?> proxy) throws Exception {
-    log.info("\u23F3 Configuring ProxySQL...");
-    StopWatch watch = StopWatch.createStarted();
-    for (String node : List.of("node1", "node2", "node3")) {
-      execStatement(proxy, "admin", "admin", 6032, format(
-        "INSERT INTO mysql_servers(hostgroup_id, hostname, port) VALUES (0,'%s',3306)"
-        , node));
-    }
-    execStatement(proxy, "admin", "admin", 6032, format(
-      "UPDATE global_variables SET variable_value='%s' WHERE variable_name='mysql-monitor_username'"
-      , MONITORING_USER));
-    execStatement(proxy, "admin", "admin", 6032, format(
-      "UPDATE global_variables SET variable_value='%s' WHERE variable_name='mysql-monitor_password'"
-      , MONITORING_USER_PASSWORD));
-    execStatement(proxy, "admin", "admin", 6032,
-      "LOAD MYSQL VARIABLES TO RUNTIME"
-    );
-    execStatement(proxy, "admin", "admin", 6032,
-      "LOAD MYSQL SERVERS TO RUNTIME"
-    );
-    execStatement(proxy, "admin", "admin", 6032, format(
-      "INSERT INTO mysql_users (username,password) VALUES ('%s','%s')"
-      , CLIENT_USER, CLIENT_USER_PASSWORD));
-    execStatement(proxy, "admin", "admin", 6032,
-      "LOAD MYSQL USERS TO RUNTIME"
-    );
-    log.infof("\u26A1 ProxySQL configured in %s", watch.formatTime());
   }
 }
