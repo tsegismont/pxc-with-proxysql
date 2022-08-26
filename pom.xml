@@ -19,7 +19,6 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
     <quarkus.package.type>uber-jar</quarkus.package.type>
-    <quarkus.package.add-runner-suffix>false</quarkus.package.add-runner-suffix>
   </properties>
 
   <dependencyManagement>
@@ -53,7 +52,7 @@
   </dependencies>
 
   <build>
-    <finalName>${artifactId}</finalName>
+    <finalName>${project.artifactId}</finalName>
     <plugins>
       <plugin>
         <artifactId>maven-compiler-plugin</artifactId>
